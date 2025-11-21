@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Star, Folder, Image as ImageIcon } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import FolderTree from './components/FolderTree';
 
 const API_URL = 'http://localhost:3001/api';
 
@@ -150,26 +151,34 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900 text-gray-200">
-      {/* Toolbar */}
-      <div className="h-12 bg-gray-800 flex items-center px-4 border-b border-gray-700 shrink-0">
-        <Folder className="w-5 h-5 mr-2 text-gray-400" />
-        <input 
-          type="text" 
-          value={currentPath} 
-          onChange={(e) => setCurrentPath(e.target.value)}
-          className="bg-gray-700 border-none text-sm px-2 py-1 rounded w-96 focus:ring-1 focus:ring-blue-500 outline-none"
-        />
-        <div className="ml-auto text-xs text-gray-500">
-          {photos.length} photos
-        </div>
-      </div>
+    <div className="flex h-screen bg-gray-900 text-gray-200 overflow-hidden">
+      {/* Sidebar - Folder Tree */}
+      <FolderTree 
+        currentPath={currentPath} 
+        onSelect={(path) => setCurrentPath(path)} 
+      />
 
-      {/* Main Content - Split View */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        
-        {/* Large Preview */}
-        <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Toolbar */}
+        <div className="h-12 bg-gray-800 flex items-center px-4 border-b border-gray-700 shrink-0">
+          <Folder className="w-5 h-5 mr-2 text-gray-400" />
+          <input 
+            type="text" 
+            value={currentPath} 
+            onChange={(e) => setCurrentPath(e.target.value)}
+            className="bg-gray-700 border-none text-sm px-2 py-1 rounded w-96 focus:ring-1 focus:ring-blue-500 outline-none"
+          />
+          <div className="ml-auto text-xs text-gray-500">
+            {photos.length} photos
+          </div>
+        </div>
+
+        {/* Split View */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          
+          {/* Large Preview */}
+          <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
           {currentPhoto ? (
             <>
               <img 
@@ -245,6 +254,7 @@ function App() {
             );
           })}
         </div>
+      </div>
       </div>
     </div>
   );

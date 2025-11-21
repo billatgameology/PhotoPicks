@@ -69,6 +69,26 @@ app.get('/api/photos', async (req, res) => {
     }
 });
 
+// API: List Subfolders
+app.get('/api/folders', async (req, res) => {
+    const folderPath = getSafePath(req.query.path);
+    
+    try {
+        const items = await fs.promises.readdir(folderPath, { withFileTypes: true });
+        const folders = items
+            .filter(item => item.isDirectory() && !item.name.startsWith('.')) // Skip hidden folders
+            .map(item => ({
+                name: item.name,
+                path: path.join(folderPath, item.name)
+            }));
+        
+        res.json({ path: folderPath, folders });
+    } catch (err) {
+        console.error("Error listing folders:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Get Thumbnail
 app.get('/api/thumbnail', async (req, res) => {
     const filePath = req.query.file;

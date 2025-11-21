@@ -44,12 +44,25 @@ const FolderNode = ({ name, path, level = 0, onSelect, selectedPath }) => {
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={handleSelect}
       >
-        <div 
-          onClick={toggle} 
-          className="p-1 mr-1 hover:bg-white/10 rounded"
-        >
-          {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-        </div>
+        {(isOpen || subFolders.length > 0 || !isOpen && subFolders.length === 0) && !loading ? (
+          subFolders.length > 0 || isOpen ? (
+            <div 
+              onClick={toggle} 
+              className="p-1 mr-1 hover:bg-white/10 rounded"
+            >
+              {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+            </div>
+          ) : (
+            <div className="w-6 mr-1" />
+          )
+        ) : (
+          <div 
+            onClick={toggle} 
+            className="p-1 mr-1 hover:bg-white/10 rounded"
+          >
+            {isOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          </div>
+        )}
         
         {isOpen ? (
           <FolderOpen className={clsx("w-4 h-4 mr-2", isSelected ? "text-white" : "text-yellow-500")} />
@@ -72,9 +85,6 @@ const FolderNode = ({ name, path, level = 0, onSelect, selectedPath }) => {
               selectedPath={selectedPath}
             />
           ))}
-          {!loading && subFolders.length === 0 && (
-            <div className="pl-8 text-xs text-gray-600 py-1 italic">Empty</div>
-          )}
         </div>
       )}
     </div>

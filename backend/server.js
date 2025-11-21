@@ -34,35 +34,94 @@ const getSafePath = (reqPath) => {
     return path.resolve(reqPath);
 };
 
-// API: List Photos in a Directory
+// API: List Photos in a Directory (with Metadata)
 app.get('/api/photos', async (req, res) => {
     const folderPath = getSafePath(req.query.path);
+    const recursive = req.query.recursive === 'true';
     
     try {
-        console.log(`Scanning: ${folderPath}`);
-        // Find jpg and png files
-        const files = await glob(['*.{jpg,jpeg,png,JPG,JPEG,PNG}'], { 
-            cwd: folderPath, 
-            absolute: true,
-            stats: true 
+        console.log(`Scanning: ${folderPath} (Recursive: ${recursive})`);
+        
+        // We use exiftool to scan because we need metadata (Rating, Label) for filtering.
+        // -json: Output JSON
+        // -r: Recursive (if requested)
+        // -ext: Filter extensions
+        // -fast: Read faster (avoid making thumbnails, just read tags)
+        // -Rating -Label: Only read these tags (plus standard ones) to speed it up
+        
+        const args = [
+            '-json',
+            '-fast',
+            '-ext', 'jpg', '-ext', 'jpeg', '-ext', 'png', '-ext', 'JPG', '-ext', 'JPEG', '-ext', 'PNG',
+            '-Rating',
+            '-Label',
+            '-file:FileName',
+            '-file:FileSize',
+            '-file:FileModifyDate'
+        ];
+
+        if (recursive) {
+            args.push('-r');
+        }
+
+        args.push(folderPath);
+
+        // exiftool-vendored doesn't expose a raw 'spawn' easily for directory scanning with custom args that returns JSON directly in this way 
+        // usually. But .read() is for single files.
+        // We can use the underlying child_process or check if the library has a batch mode.
+        // The library has `exiftool.read(file)` but for bulk, it's often better to run the command.
+        // However, `exiftool-vendored` manages a singleton process. 
+        // Let's stick to `glob` for listing files (it's fast) and then batch read metadata?
+        // OR, let's try to use the library's batch capabilities if available, or just spawn our own for the list.
+        
+        // Actually, for a local app, `glob` + `exiftool` batch is safer.
+        // Let's use glob to find files, then pass them to exiftool in batches if needed.
+        // BUT, passing 1000 args to command line is bad.
+        
+        // Alternative: Use `exiftool` directly via shell execution for the listing.
+        // It is the most robust way to get metadata for a whole folder.
+        
+        const { execFile } = require('child_process');
+        let exiftoolPath;
+        try {
+            // Try to get the path from the platform-specific package
+            exiftoolPath = require('exiftool-vendored.exe');
+        } catch (e) {
+            // Fallback or non-windows logic (though this user is on Windows)
+            // If we can't find the binary, we can't run the batch scan easily.
+            console.error("Could not find exiftool binary path:", e);
+            throw new Error("Exiftool binary not found");
+        }
+
+        // We need to increase maxBuffer because the JSON can be huge for many photos
+        execFile(exiftoolPath, args, { maxBuffer: 1024 * 1024 * 50 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error("Exiftool error:", stderr);
+                // If exiftool fails (e.g. no files), we might just return empty
+                return res.json({ path: folderPath, photos: [] });
+            }
+
+            try {
+                const rawData = JSON.parse(stdout);
+                
+                const photos = rawData.map(item => ({
+                    name: item.FileName,
+                    path: item.SourceFile,
+                    size: item.FileSize,
+                    rating: item.Rating || 0,
+                    label: item.Label || null
+                }));
+
+                // Sort by name default
+                photos.sort((a, b) => a.name.localeCompare(b.name));
+
+                res.json({ path: folderPath, photos });
+            } catch (parseErr) {
+                console.error("JSON Parse error:", parseErr);
+                res.json({ path: folderPath, photos: [] });
+            }
         });
 
-        // We need to get metadata for these files. 
-        // Reading metadata for ALL files at once might be slow. 
-        // Strategy: Return list of files first, then fetch metadata lazily or in batches?
-        // Or just read basic stats.
-        // For a "lightweight" app, let's try to read metadata for the visible ones, 
-        // but to sort/filter we might need it all. 
-        // Let's start by just returning the file list and basic stats.
-        
-        const photoList = files.map(file => ({
-            name: file.name,
-            path: file.path,
-            size: file.stats.size,
-            mtime: file.stats.mtime
-        }));
-
-        res.json({ path: folderPath, photos: photoList });
     } catch (err) {
         console.error("Error scanning folder:", err);
         res.status(500).json({ error: err.message });
@@ -97,12 +156,15 @@ app.get('/api/thumbnail', async (req, res) => {
     }
 
     try {
-        const transform = sharp(filePath)
+        await sharp(filePath)
+            .rotate() // Auto-rotate based on EXIF orientation
             .resize(300, 300, { fit: 'inside' })
-            .jpeg({ quality: 80 });
-        
-        res.type('image/jpeg');
-        transform.pipe(res);
+            .jpeg({ quality: 80 })
+            .toBuffer()
+            .then(buffer => {
+                res.type('image/jpeg');
+                res.send(buffer);
+            });
     } catch (err) {
         console.error("Error generating thumbnail:", err);
         res.status(500).send('Error generating thumbnail');
@@ -110,12 +172,28 @@ app.get('/api/thumbnail', async (req, res) => {
 });
 
 // API: Get Full Image (for large view)
-app.get('/api/image', (req, res) => {
+app.get('/api/image', async (req, res) => {
     const filePath = req.query.file;
     if (!filePath || !fs.existsSync(filePath)) {
         return res.status(404).send('File not found');
     }
-    res.sendFile(filePath);
+    
+    try {
+        // Apply auto-rotation for images displayed in the browser
+        const image = sharp(filePath);
+        await image.rotate(); // Auto-rotate based on EXIF orientation
+        
+        res.type('image/jpeg');
+        image.jpeg({ quality: 95 }).pipe(res);
+    } catch (err) {
+        console.error("Error serving image:", err);
+        // Fallback: send original file if sharp fails
+        try {
+            res.sendFile(filePath);
+        } catch (fallbackErr) {
+            res.status(500).send('Error serving image');
+        }
+    }
 });
 
 // API: Get Metadata
@@ -183,6 +261,36 @@ app.post('/api/metadata', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error("Error writing metadata:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Copy Files
+app.post('/api/copy-files', async (req, res) => {
+    const { files, destination } = req.body;
+    if (!files || !Array.isArray(files) || !destination) {
+        return res.status(400).json({ error: 'Invalid request' });
+    }
+
+    try {
+        // Ensure destination exists
+        if (!fs.existsSync(destination)) {
+            await fs.promises.mkdir(destination, { recursive: true });
+        }
+
+        let count = 0;
+        for (const file of files) {
+            const fileName = path.basename(file);
+            const destPath = path.join(destination, fileName);
+            
+            // Copy file (overwrite if exists? or skip? let's overwrite for now or use copyFile)
+            await fs.promises.copyFile(file, destPath);
+            count++;
+        }
+
+        res.json({ success: true, count });
+    } catch (err) {
+        console.error("Error copying files:", err);
         res.status(500).json({ error: err.message });
     }
 });

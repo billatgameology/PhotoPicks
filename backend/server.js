@@ -158,7 +158,8 @@ app.post('/api/metadata', async (req, res) => {
             tagsToWrite['XPKeywords'] = keywords.join(';'); // Windows specific
         }
 
-        await exiftool.write(file, tagsToWrite);
+        // Write metadata and prevent creating a backup file (_original)
+        await exiftool.write(file, tagsToWrite, ['-overwrite_original']);
         res.json({ success: true });
     } catch (err) {
         console.error("Error writing metadata:", err);

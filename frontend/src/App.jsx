@@ -114,7 +114,7 @@ function App() {
         case '3': updateMetadata(3, undefined); break;
         case '4': updateMetadata(4, undefined); break;
         case '5': updateMetadata(5, undefined); break;
-        case '0': updateMetadata(0, undefined); break;
+        case '0': updateMetadata(0, null); break;
         case '6': updateMetadata(undefined, 'Red'); break;
         case '7': updateMetadata(undefined, 'Yellow'); break;
         case '8': updateMetadata(undefined, 'Green'); break;
